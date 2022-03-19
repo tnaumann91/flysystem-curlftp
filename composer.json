@@ -17,7 +17,8 @@
         "php": "^7.2.5|^8.0",
         "ext-curl": "*",
         "ext-intl": "*",
-        "league/flysystem": "^1.1"
+        "league/flysystem": "^2",
+        "league/flysystem-ftp": "^2.4"
     },
     "require-dev": {
         "phpunit/phpunit": "^8.5",

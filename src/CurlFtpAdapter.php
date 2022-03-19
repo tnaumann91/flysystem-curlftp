@@ -3,15 +3,26 @@
 namespace VladimirYuldashev\Flysystem;
 
 use DateTime;
-use League\Flysystem\Adapter\AbstractFtpAdapter;
-use League\Flysystem\AdapterInterface;
 use League\Flysystem\Config;
-use League\Flysystem\Util;
-use League\Flysystem\Util\MimeType;
-use Normalizer;
+use League\Flysystem\FileAttributes;
+use League\Flysystem\FilesystemAdapter;
+use League\Flysystem\FilesystemException;
+use League\Flysystem\UnableToCopyFile;
+use League\Flysystem\UnableToCreateDirectory;
+use League\Flysystem\UnableToDeleteDirectory;
+use League\Flysystem\UnableToDeleteFile;
+use League\Flysystem\UnableToMoveFile;
+use League\Flysystem\UnableToReadFile;
+use League\Flysystem\UnableToRetrieveMetadata;
+use League\Flysystem\UnableToWriteFile;
+use League\Flysystem\UnixVisibility\PortableVisibilityConverter;
+use League\Flysystem\UnixVisibility\VisibilityConverter;
+use League\MimeTypeDetection\FinfoMimeTypeDetector;
+use League\MimeTypeDetection\MimeTypeDetector;
+use \Normalizer;
 use RuntimeException;
 
-class CurlFtpAdapter extends AbstractFtpAdapter
+class CurlFtpAdapter implements FilesystemAdapter
 {
     protected $configurable = [
         'host',
@@ -34,6 +45,20 @@ class CurlFtpAdapter extends AbstractFtpAdapter
         'verbose',
         'enableTimestampsOnUnixListings',
     ];
+
+    public function __construct(
+        array $options,
+        VisibilityConverter $visibilityConverter = null,
+        MimeTypeDetector $mimeTypeDetector = null
+    )
+    {
+        $this->visibilityConverter = $visibilityConverter ?? new PortableVisibilityConverter();
+        $this->mimeTypeDetector = $mimeTypeDetector ?? new FinfoMimeTypeDetector();
+    }
+
+    private $visibilityConverter;
+
+    private $mimeTypeDetector;
 
     /** @var Curl */
     protected $connection;
@@ -73,27 +98,35 @@ class CurlFtpAdapter extends AbstractFtpAdapter
 
     /** @var bool */
     protected $verbose = false;
+    /**
+     * @var bool
+     */
+    private $passive;
+    /**
+     * @var bool
+     */
+    private $ssl;
 
     /**
      * @param bool $ftps
      */
-    public function setFtps($ftps): void
+    public function setFtps(bool $ftps): void
     {
-        $this->ftps = (bool) $ftps;
+        $this->ftps = $ftps;
     }
 
     /**
      * @param bool $ssl
      */
-    public function setSsl($ssl): void
+    public function setSsl(bool $ssl): void
     {
-        $this->ssl = (bool) $ssl;
+        $this->ssl = $ssl;
     }
 
     /**
      * @param int $sslVerifyPeer
      */
-    public function setSslVerifyPeer($sslVerifyPeer): void
+    public function setSslVerifyPeer(int $sslVerifyPeer): void
     {
         $this->sslVerifyPeer = $sslVerifyPeer;
     }
@@ -101,7 +134,7 @@ class CurlFtpAdapter extends AbstractFtpAdapter
     /**
      * @param int $sslVerifyHost
      */
-    public function setSslVerifyHost($sslVerifyHost): void
+    public function setSslVerifyHost(int $sslVerifyHost): void
     {
         $this->sslVerifyHost = $sslVerifyHost;
     }
@@ -109,31 +142,31 @@ class CurlFtpAdapter extends AbstractFtpAdapter
     /**
      * @param bool $utf8
      */
-    public function setUtf8($utf8): void
+    public function setUtf8(bool $utf8): void
     {
-        $this->utf8 = (bool) $utf8;
+        $this->utf8 = $utf8;
     }
 
     /**
      * @param bool $passive
      */
-    public function setPassive($passive): void
+    public function setPassive(bool $passive): void
     {
-        $this->passive = (bool) $passive;
+        $this->passive = $passive;
     }
 
     /**
      * @param bool $skipPasvIp
      */
-    public function setSkipPasvIp($skipPasvIp): void
+    public function setSkipPasvIp(bool $skipPasvIp): void
     {
-        $this->skipPasvIp = (bool) $skipPasvIp;
+        $this->skipPasvIp = $skipPasvIp;
     }
 
     /**
      * @return string
      */
-    public function getProxyHost()
+    public function getProxyHost(): string
     {
         return $this->proxyHost;
     }
@@ -141,7 +174,7 @@ class CurlFtpAdapter extends AbstractFtpAdapter
     /**
      * @param string $proxyHost
      */
-    public function setProxyHost($proxyHost): void
+    public function setProxyHost(string $proxyHost): void
     {
         $this->proxyHost = $proxyHost;
     }
@@ -149,7 +182,7 @@ class CurlFtpAdapter extends AbstractFtpAdapter
     /**
      * @return int
      */
-    public function getProxyPort()
+    public function getProxyPort(): int
     {
         return $this->proxyPort;
     }
@@ -157,7 +190,7 @@ class CurlFtpAdapter extends AbstractFtpAdapter
     /**
      * @param int $proxyPort
      */
-    public function setProxyPort($proxyPort): void
+    public function setProxyPort(int $proxyPort): void
     {
         $this->proxyPort = $proxyPort;
     }
@@ -165,7 +198,7 @@ class CurlFtpAdapter extends AbstractFtpAdapter
     /**
      * @return string
      */
-    public function getProxyUsername()
+    public function getProxyUsername(): string
     {
         return $this->proxyUsername;
     }
@@ -173,7 +206,7 @@ class CurlFtpAdapter extends AbstractFtpAdapter
     /**
      * @param string $proxyUsername
      */
-    public function setProxyUsername($proxyUsername): void
+    public function setProxyUsername(string $proxyUsername): void
     {
         $this->proxyUsername = $proxyUsername;
     }
@@ -181,7 +214,7 @@ class CurlFtpAdapter extends AbstractFtpAdapter
     /**
      * @return string
      */
-    public function getProxyPassword()
+    public function getProxyPassword(): string
     {
         return $this->proxyPassword;
     }
@@ -189,7 +222,7 @@ class CurlFtpAdapter extends AbstractFtpAdapter
     /**
      * @param string $proxyPassword
      */
-    public function setProxyPassword($proxyPassword): void
+    public function setProxyPassword(string $proxyPassword): void
     {
         $this->proxyPassword = $proxyPassword;
     }
@@ -197,7 +230,7 @@ class CurlFtpAdapter extends AbstractFtpAdapter
     /**
      * @param bool $verbose
      */
-    public function setVerbose($verbose): void
+    public function setVerbose(bool $verbose): void
     {
         $this->verbose = (bool) $verbose;
     }
@@ -267,7 +300,7 @@ class CurlFtpAdapter extends AbstractFtpAdapter
      *
      * @return bool
      */
-    public function isConnected()
+    public function isConnected(): bool
     {
         return $this->connection !== null && ! $this->hasConnectionReachedTimeout();
     }
@@ -275,7 +308,7 @@ class CurlFtpAdapter extends AbstractFtpAdapter
     /**
      * @return bool
      */
-    protected function hasConnectionReachedTimeout()
+    protected function hasConnectionReachedTimeout(): bool
     {
         return $this->connectionTimestamp + $this->getTimeout() < time();
     }
@@ -287,80 +320,41 @@ class CurlFtpAdapter extends AbstractFtpAdapter
      * @param string $contents
      * @param Config $config Config object
      *
-     * @return array|false false on failure file meta data on success
+     * @throws UnableToWriteFile
+     * @throws FilesystemException
      */
-    public function write($path, $contents, Config $config)
+    public function write(string $path, string $contents, Config $config) : void
     {
         $stream = fopen('php://temp', 'w+b');
         fwrite($stream, $contents);
         rewind($stream);
 
-        $result = $this->writeStream($path, $stream, $config);
-
-        if ($result === false) {
-            return false;
-        }
-
-        $result['contents'] = $contents;
-        $result['mimetype'] = Util::guessMimeType($path, $contents);
-
-        return $result;
+        $this->writeStream($path, $stream, $config);
     }
 
     /**
      * Write a new file using a stream.
      *
-     * @param string   $path
-     * @param resource $resource
+     * @param string $path
+     * @param resource $contents
      * @param Config   $config Config object
-     *
-     * @return array|false false on failure file meta data on success
-     */
-    public function writeStream($path, $resource, Config $config)
+
+     * @throws UnableToWriteFile
+     * @throws FilesystemException
+     **/
+    public function writeStream(string $path, $contents, Config $config) : void
     {
         $connection = $this->getConnection();
 
         $result = $connection->exec([
             CURLOPT_URL => $this->getBaseUri().'/'.$path,
             CURLOPT_UPLOAD => 1,
-            CURLOPT_INFILE => $resource,
+            CURLOPT_INFILE => $contents,
         ]);
 
         if ($result === false) {
-            return false;
+            throw new UnableToWriteFile('Curl returned false value');
         }
-
-        $type = 'file';
-
-        return compact('type', 'path');
-    }
-
-    /**
-     * Update a file.
-     *
-     * @param string $path
-     * @param string $contents
-     * @param Config $config Config object
-     *
-     * @return array|false false on failure file meta data on success
-     */
-    public function update($path, $contents, Config $config)
-    {
-        return $this->write($path, $contents, $config);
-    }
-
-    /**
-     * Update a file using a stream.
-     *
-     * @param string   $path
-     * @param resource $resource
-     * @param Config   $config Config object
-     *
-     * @return array|false false on failure file meta data on success
-     */
-    public function updateStream($path, $resource, Config $config)
-    {
-        return $this->writeStream($path, $resource, $config);
     }
 
     /**
@@ -389,20 +383,21 @@ class CurlFtpAdapter extends AbstractFtpAdapter
     /**
      * Copy a file.
      *
-     * @param string $path
-     * @param string $newpath
+     * @param string $source
+     * @param string $destination
      *
-     * @return bool
+     * @throws UnableToCopyFile
+     * @throws FilesystemException
      */
-    public function copy($path, $newpath)
+    public function copy(string $source, string $destination, Config $config) : void
     {
-        $file = $this->read($path);
+        $file = $this->read($source);
 
         if ($file === false) {
-            return false;
+            // TODO throw return false;
         }
 
-        return $this->write($newpath, $file['contents'], new Config()) !== false;
+        $this->write($destination, $file['contents'], $config);
     }
 
     /**
@@ -412,52 +407,54 @@ class CurlFtpAdapter extends AbstractFtpAdapter
      *
      * @return bool
      */
-    public function delete($path)
+    public function delete(string $path) : void
     {
         $connection = $this->getConnection();
 
         $response = $this->rawCommand($connection, 'DELE '.$path);
         [$code] = explode(' ', end($response), 2);
 
-        return (int) $code === 250;
+        if ((int) $code !== 250) {
+            throw new UnableToDeleteFile();
+        }
     }
 
     /**
      * Delete a directory.
      *
-     * @param string $dirname
+     * @param string $path
      *
-     * @return bool
+     * @return void
      */
-    public function deleteDir($dirname)
+    public function deleteDirectory(string $path) : void
     {
         $connection = $this->getConnection();
 
-        $response = $this->rawCommand($connection, 'RMD '.$dirname);
+        $response = $this->rawCommand($connection, 'RMD '.$path);
         [$code] = explode(' ', end($response), 2);
 
-        return (int) $code === 250;
+        if ((int) $code !== 250) {
+            throw new UnableToDeleteDirectory();
+        }
     }
 
     /**
      * Create a directory.
      *
-     * @param string $dirname directory name
+     * @param string $path directory name
      * @param Config $config
      *
      * @return array|false
      */
-    public function createDir($dirname, Config $config)
+    public function createDirectory(string $path, Config $config) : void
     {
         $connection = $this->getConnection();
 
-        $response = $this->rawCommand($connection, 'MKD '.$dirname);
+        $response = $this->rawCommand($connection, 'MKD '.$path);
         [$code] = explode(' ', end($response), 2);
         if ((int) $code !== 257) {
-            return false;
+            throw new UnableToCreateDirectory();
         }
-
-        return ['type' => 'dir', 'path' => $dirname];
     }
 
     /**
@@ -468,11 +465,11 @@ class CurlFtpAdapter extends AbstractFtpAdapter
      *
      * @return array|false file meta data
      */
-    public function setVisibility($path, $visibility)
+    public function setVisibility(string $path, string $visibility) : void
     {
         $connection = $this->getConnection();
 
-        if ($visibility === AdapterInterface::VISIBILITY_PUBLIC) {
+        if ($visibility === AdapterInterface::VISIBILITY_PUBLIC) {// TODO use visibilityConverter
             $mode = $this->getPermPublic();
         } else {
             $mode = $this->getPermPrivate();
@@ -495,17 +492,15 @@ class CurlFtpAdapter extends AbstractFtpAdapter
      *
      * @return array|false
      */
-    public function read($path)
+    public function read(string $path) : string
     {
-        if (! $object = $this->readStream($path)) {
-            return false;
-        }
+        $stream = $this->readStream($path);
 
-        $object['contents'] = stream_get_contents($object['stream']);
-        fclose($object['stream']);
-        unset($object['stream']);
+        $content = stream_get_contents($stream);
+        fclose($stream);
+        unset($stream);
 
-        return $object;
+        return $content;
     }
 
     /**
@@ -513,11 +508,15 @@ class CurlFtpAdapter extends AbstractFtpAdapter
      *
      * @param string $path
      *
-     * @return array|false
+     * @return resource
      */
-    public function readStream($path)
+    public function readStream(string $path)
     {
         $stream = fopen('php://temp', 'w+b');
+
+        if ($stream === false) {
+            throw new UnableToReadFile("Failed to open PHP temp handle");
+        }
 
         $connection = $this->getConnection();
 
@@ -528,13 +527,12 @@ class CurlFtpAdapter extends AbstractFtpAdapter
 
         if (! $result) {
             fclose($stream);
-
-            return false;
+            throw new UnableToReadFile();
         }
 
         rewind($stream);
 
-        return ['type' => 'file', 'path' => $path, 'stream' => $stream];
+        return $stream;
     }
 
     /**
@@ -544,7 +542,7 @@ class CurlFtpAdapter extends AbstractFtpAdapter
      *
      * @return array|false
      */
-    public function getMetadata($path)
+    public function getMetadata(string $path)
     {
         if ($path === '') {
             return ['type' => 'dir', 'path' => ''];
@@ -569,7 +567,7 @@ class CurlFtpAdapter extends AbstractFtpAdapter
      *
      * @return array|false
      */
-    public function getMimetype($path)
+    public function getMimetype(string $path)
     {
         if (! $metadata = $this->getMetadata($path)) {
             return false;
@@ -587,7 +585,7 @@ class CurlFtpAdapter extends AbstractFtpAdapter
      *
      * @return array|false
      */
-    public function getTimestamp($path)
+    public function getTimestamp(string $path)
     {
         $response = $this->rawCommand($this->getConnection(), 'MDTM '.$path);
         [$code, $time] = explode(' ', end($response), 2);
@@ -613,7 +611,7 @@ class CurlFtpAdapter extends AbstractFtpAdapter
      *
      * @param string $directory
      */
-    protected function listDirectoryContents($directory, $recursive = false)
+    protected function listDirectoryContents(string $directory, $recursive = false)
     {
         if ($recursive === true) {
             return $this->listDirectoryContentsRecursive($directory);
@@ -639,7 +637,7 @@ class CurlFtpAdapter extends AbstractFtpAdapter
      *
      * @param string $directory
      */
-    protected function listDirectoryContentsRecursive($directory)
+    protected function listDirectoryContentsRecursive(string $directory)
     {
         $request = rtrim('LIST -aln '.$this->normalizePath($directory));
 
@@ -666,7 +664,7 @@ class CurlFtpAdapter extends AbstractFtpAdapter
      *
      * @return int
      */
-    protected function normalizePermissions($permissions)
+    protected function normalizePermissions(string $permissions): int
     {
         // remove the type identifier
         $permissions = substr($permissions, 1);
@@ -691,13 +689,13 @@ class CurlFtpAdapter extends AbstractFtpAdapter
      *
      * @return string
      */
-    protected function normalizePath($path)
+    protected function normalizePath(string $path): string
     {
         if (empty($path)) {
             return '';
         }
 
-        $path = Normalizer::normalize($path);
+        $path = Normalizer::normalize($path);// TODO use PathNormalizer
 
         if ($this->isPureFtpdServer()) {
             $path = str_replace(' ', '\ ', $path);
@@ -711,7 +709,7 @@ class CurlFtpAdapter extends AbstractFtpAdapter
     /**
      * @return bool
      */
-    protected function isPureFtpdServer()
+    protected function isPureFtpdServer(): bool
     {
         if ($this->isPureFtpd === null) {
             $response = $this->rawCommand($this->getConnection(), 'HELP');
@@ -725,12 +723,12 @@ class CurlFtpAdapter extends AbstractFtpAdapter
     /**
      * Sends an arbitrary command to an FTP server.
      *
-     * @param  Curl   $connection The CURL instance
-     * @param  string $command    The command to execute
+     * @param Curl $connection The CURL instance
+     * @param string $command    The command to execute
      *
      * @return array Returns the server's response as an array of strings
      */
-    protected function rawCommand($connection, $command)
+    protected function rawCommand(Curl $connection, string $command): array
     {
         $response = '';
         $callback = static function ($ch, $string) use (&$response) {
@@ -750,12 +748,12 @@ class CurlFtpAdapter extends AbstractFtpAdapter
      * Sends an arbitrary command to an FTP server using POSTQUOTE option. This makes sure all commands are run
      * in succession and increases chance of success for complex operations like "move/rename file".
      *
-     * @param  Curl  $connection The CURL instance
+     * @param Curl $connection The CURL instance
      * @param  array $commandsArray    The commands to execute
      *
      * @return array Returns the server's response as an array of strings
      */
-    protected function rawPost($connection, array $commandsArray)
+    protected function rawPost(Curl $connection, array $commandsArray): array
     {
         $response = '';
         $callback = function ($ch, $string) use (&$response) {
@@ -776,7 +774,7 @@ class CurlFtpAdapter extends AbstractFtpAdapter
      *
      * @return string
      */
-    protected function getBaseUri()
+    protected function getBaseUri(): string
     {
         $protocol = $this->ftps ? 'ftps' : 'ftp';
 
@@ -828,5 +826,40 @@ class CurlFtpAdapter extends AbstractFtpAdapter
         if ((int) $code !== 250) {
             throw new RuntimeException('Root is invalid or does not exist: '.$this->getRoot());
         }
+    }
+
+    public function fileExists(string $path): bool
+    {
+        // TODO: Implement fileExists() method.
+    }
+
+    public function visibility(string $path): FileAttributes
+    {
+        // TODO: Implement visibility() method.
+    }
+
+    public function mimeType(string $path): FileAttributes
+    {
+        // TODO: Implement mimeType() method.
+    }
+
+    public function lastModified(string $path): FileAttributes
+    {
+        // TODO: Implement lastModified() method.
+    }
+
+    public function fileSize(string $path): FileAttributes
+    {
+        // TODO: Implement fileSize() method.
+    }
+
+    public function listContents(string $path, bool $deep): iterable
+    {
+        // TODO: Implement listContents() method.
+    }
+
+    public function move(string $source, string $destination, Config $config): void
+    {
+        // TODO: Implement move() method.
     }
 }
