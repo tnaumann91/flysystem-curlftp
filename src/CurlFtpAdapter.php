@@ -3,10 +3,14 @@
 namespace VladimirYuldashev\Flysystem;
 
 use DateTime;
+use Generator;
 use League\Flysystem\Config;
+use League\Flysystem\DirectoryAttributes;
 use League\Flysystem\FileAttributes;
 use League\Flysystem\FilesystemAdapter;
 use League\Flysystem\FilesystemException;
+use League\Flysystem\Ftp\InvalidListResponseReceived;
+use League\Flysystem\StorageAttributes;
 use League\Flysystem\UnableToCopyFile;
 use League\Flysystem\UnableToCreateDirectory;
 use League\Flysystem\UnableToDeleteDirectory;
@@ -14,6 +18,7 @@ use League\Flysystem\UnableToDeleteFile;
 use League\Flysystem\UnableToMoveFile;
 use League\Flysystem\UnableToReadFile;
 use League\Flysystem\UnableToRetrieveMetadata;
+use League\Flysystem\UnableToSetVisibility;
 use League\Flysystem\UnableToWriteFile;
 use League\Flysystem\UnixVisibility\PortableVisibilityConverter;
 use League\Flysystem\UnixVisibility\VisibilityConverter;
@@ -24,6 +29,9 @@ use RuntimeException;
 
 class CurlFtpAdapter implements FilesystemAdapter
 {
+    const SYSTEM_TYPE_WINDOWS = 'windows';
+    const SYSTEM_TYPE_UNIX = 'unix';
+
     protected $configurable = [
         'host',
         'port',
@@ -66,6 +74,15 @@ class CurlFtpAdapter implements FilesystemAdapter
     /** @var int unix timestamp when connection was established */
     protected $connectionTimestamp = 0;
 
+    /** @var string */
+    private $host;
+
+    /** @var int */
+    private $port;
+
+    /** @var string */
+    private $root;
+
     /** @var bool */
     protected $isPureFtpd;
 
@@ -98,14 +115,24 @@ class CurlFtpAdapter implements FilesystemAdapter
 
     /** @var bool */
     protected $verbose = false;
+
     /**
      * @var bool
      */
     private $passive;
+
     /**
      * @var bool
      */
     private $ssl;
+
+    /** @var bool */
+    private $enableTimestampsOnUnixListings;
+
+    /**
+     * @var null|string
+     */
+    private $systemType;
 
     /**
      * @param bool $ftps
@@ -161,6 +188,30 @@ class CurlFtpAdapter implements FilesystemAdapter
     public function setSkipPasvIp(bool $skipPasvIp): void
     {
         $this->skipPasvIp = $skipPasvIp;
+    }
+
+    /**
+     * @return string
+     */
+    public function getHost(): string
+    {
+        return $this->host;
+    }
+
+    /**
+     * @return int
+     */
+    public function getPort(): int
+    {
+        return $this->port;
+    }
+
+    /**
+     * @return string
+     */
+    public function getRoot(): string
+    {
+        return $this->root;
     }
 
     /**
@@ -232,7 +283,28 @@ class CurlFtpAdapter implements FilesystemAdapter
      */
     public function setVerbose(bool $verbose): void
     {
-        $this->verbose = (bool) $verbose;
+        $this->verbose = $verbose;
+    }
+
+    public function setTimestampsOnUnixListingsEnabled(bool $timestampsOnUnixListingsEnabled)
+    {
+        $this->enableTimestampsOnUnixListings = $timestampsOnUnixListingsEnabled;
+    }
+
+    /**
+     * @return bool
+     */
+    public function timestampsOnUnixListingsEnabled(): bool
+    {
+        return $this->enableTimestampsOnUnixListings;
+    }
+
+    /**
+     * @return Curl
+     */
+    private function getConnection(): Curl
+    {
+        return $this->connection;
     }
 
     /**
@@ -353,7 +425,7 @@ class CurlFtpAdapter implements FilesystemAdapter
         ]);
 
         if ($result === false) {
-            throw new UnableToWriteFile('Curl returned false value');
+            throw UnableToWriteFile::atLocation($path, $this->getConnection()->getLastError());
         }
     }
 
@@ -362,10 +434,10 @@ class CurlFtpAdapter implements FilesystemAdapter
      *
      * @param string $path
      * @param string $newpath
-     *
-     * @return bool
+     * @param Config $config
+     * @return void
      */
-    public function rename($path, $newpath)
+    public function move(string $path, string $newpath, Config $config) : void
     {
         $connection = $this->getConnection();
 
@@ -377,7 +449,9 @@ class CurlFtpAdapter implements FilesystemAdapter
         $response = $this->rawPost($connection, $moveCommands);
         list($code) = explode(' ', end($response), 2);
 
-        return (int) $code === 250;
+        if ((int) $code === 250) {
+            throw UnableToMoveFile::fromLocationTo($path, $newpath);
+        }
     }
 
     /**
@@ -385,19 +459,17 @@ class CurlFtpAdapter implements FilesystemAdapter
      *
      * @param string $source
      * @param string $destination
-     *
-     * @throws UnableToCopyFile
+     * @param Config $config
      * @throws FilesystemException
      */
     public function copy(string $source, string $destination, Config $config) : void
     {
-        $file = $this->read($source);
-
-        if ($file === false) {
-            // TODO throw return false;
+        try {
+            $file = $this->read($source);
+            $this->write($destination, $file, $config);
+        } catch (UnableToReadFile | UnableToWriteFile $e) {
+            throw UnableToCopyFile::fromLocationTo($source, $destination, $e);
         }
-
-        $this->write($destination, $file['contents'], $config);
     }
 
     /**
@@ -405,7 +477,7 @@ class CurlFtpAdapter implements FilesystemAdapter
      *
      * @param string $path
      *
-     * @return bool
+     * @return void
      */
     public function delete(string $path) : void
     {
@@ -415,7 +487,7 @@ class CurlFtpAdapter implements FilesystemAdapter
         [$code] = explode(' ', end($response), 2);
 
         if ((int) $code !== 250) {
-            throw new UnableToDeleteFile();
+            throw UnableToDeleteFile::atLocation($path, "Server responded with code {$code}");
         }
     }
 
@@ -434,7 +506,7 @@ class CurlFtpAdapter implements FilesystemAdapter
         [$code] = explode(' ', end($response), 2);
 
         if ((int) $code !== 250) {
-            throw new UnableToDeleteDirectory();
+            throw UnableToDeleteFile::atLocation($path, "Server responded with code {$code}");
         }
     }
 
@@ -453,7 +525,7 @@ class CurlFtpAdapter implements FilesystemAdapter
         $response = $this->rawCommand($connection, 'MKD '.$path);
         [$code] = explode(' ', end($response), 2);
         if ((int) $code !== 257) {
-            throw new UnableToCreateDirectory();
+            throw UnableToCreateDirectory::atLocation($path, "Server responded with code {$code}");
         }
     }
 
@@ -468,21 +540,15 @@ class CurlFtpAdapter implements FilesystemAdapter
     public function setVisibility(string $path, string $visibility) : void
     {
         $connection = $this->getConnection();
-
-        if ($visibility === AdapterInterface::VISIBILITY_PUBLIC) {// TODO use visibilityConverter
-            $mode = $this->getPermPublic();
-        } else {
-            $mode = $this->getPermPrivate();
-        }
+        $mode = $this->visibilityConverter->forFile($visibility);
 
         $request = sprintf('SITE CHMOD %o %s', $mode, $path);
         $response = $this->rawCommand($connection, $request);
         [$code] = explode(' ', end($response), 2);
-        if ((int) $code !== 200) {
-            return false;
-        }
 
-        return $this->getMetadata($path);
+        if ((int) $code !== 200) {
+            throw UnableToSetVisibility::atLocation($path);
+        }
     }
 
     /**
@@ -527,7 +593,7 @@ class CurlFtpAdapter implements FilesystemAdapter
 
         if (! $result) {
             fclose($stream);
-            throw new UnableToReadFile();
+            throw UnableToReadFile::fromLocation($path, $this->getConnection()->getLastError());
         }
 
         rewind($stream);
@@ -567,15 +633,14 @@ class CurlFtpAdapter implements FilesystemAdapter
      *
      * @return array|false
      */
-    public function getMimetype(string $path)
+    public function mimetype(string $path) : FileAttributes
     {
-        if (! $metadata = $this->getMetadata($path)) {
-            return false;
+        $mimeType = $this->mimeTypeDetector->detectMimeType($path, '');
+        if ($mimeType === null) {
+            throw UnableToRetrieveMetadata::mimeType($path, 'Unknown extension');
         }
 
-        $metadata['mimetype'] = MimeType::detectByFilename($path);
-
-        return $metadata;
+        return new FileAttributes($path, null, null, null, $mimeType);
     }
 
     /**
@@ -585,12 +650,12 @@ class CurlFtpAdapter implements FilesystemAdapter
      *
      * @return array|false
      */
-    public function getTimestamp(string $path)
+    public function lastModified(string $path) : FileAttributes
     {
         $response = $this->rawCommand($this->getConnection(), 'MDTM '.$path);
         [$code, $time] = explode(' ', end($response), 2);
-        if ($code !== '213') {
-            return false;
+        if ($code !== '213' || $time < 0) {
+            throw UnableToRetrieveMetadata::lastModified($path);
         }
 
         if (strpos($time, '.')) {
@@ -600,10 +665,36 @@ class CurlFtpAdapter implements FilesystemAdapter
         }
 
         if (! $datetime) {
-            return false;
+            throw UnableToRetrieveMetadata::lastModified($path, "Unable to parse server response for MDTM command: $time");
         }
 
-        return ['path' => $path, 'timestamp' => $datetime->getTimestamp()];
+        return new FileAttributes($path, null, null, $datetime->getTimestamp());
+    }
+
+    /**
+     * {@inheritdoc}
+     *
+     * @param string $path
+     */
+    public function listContents(string $path, $deep = false) : iterable
+    {
+        if ($deep === true) {
+            yield from $this->listDirectoryContentsRecursive($path);
+        } else {
+            $request = rtrim('LIST -aln '.$this->normalizePath($path));
+
+            $connection = $this->getConnection();
+            $result = $connection->exec([CURLOPT_CUSTOMREQUEST => $request]);
+            if ($result === false) {
+                return [];
+            }
+
+            if ($path === '/') {
+                $path = '';
+            }
+
+            return $this->normalizeListing(explode(PHP_EOL, $result), $path);
+        }
     }
 
     /**
@@ -611,50 +702,29 @@ class CurlFtpAdapter implements FilesystemAdapter
      *
      * @param string $directory
      */
-    protected function listDirectoryContents(string $directory, $recursive = false)
-    {
-        if ($recursive === true) {
-            return $this->listDirectoryContentsRecursive($directory);
-        }
-
-        $request = rtrim('LIST -aln '.$this->normalizePath($directory));
-
-        $connection = $this->getConnection();
-        $result = $connection->exec([CURLOPT_CUSTOMREQUEST => $request]);
-        if ($result === false) {
-            return [];
-        }
-
-        if ($directory === '/') {
-            $directory = '';
-        }
-
-        return $this->normalizeListing(explode(PHP_EOL, $result), $directory);
-    }
-
-    /**
-     * {@inheritdoc}
-     *
-     * @param string $directory
-     */
-    protected function listDirectoryContentsRecursive(string $directory)
+    protected function listDirectoryContentsRecursive(string $directory): Generator
     {
         $request = rtrim('LIST -aln '.$this->normalizePath($directory));
 
         $connection = $this->getConnection();
-        $result = $connection->exec([CURLOPT_CUSTOMREQUEST => $request]);
+        $listing = $connection->exec([CURLOPT_CUSTOMREQUEST => $request]);
 
-        $listing = $this->normalizeListing(explode(PHP_EOL, $result), $directory);
-        $output = [];
+        /** @var StorageAttributes[] $listing */
+        $listing = $this->normalizeListing($listing, $directory);
 
         foreach ($listing as $item) {
-            $output[] = $item;
-            if ($item['type'] === 'dir') {
-                $output = array_merge($output, $this->listDirectoryContentsRecursive($item['path']));
+            yield $item;
+
+            if ( ! $item->isDir()) {
+                continue;
+            }
+
+            $children = $this->listDirectoryContentsRecursive($item->path());
+
+            foreach ($children as $child) {
+                yield $child;
             }
         }
-
-        return $output;
     }
 
     /**
@@ -741,7 +811,7 @@ class CurlFtpAdapter implements FilesystemAdapter
             CURLOPT_HEADERFUNCTION => $callback,
         ]);
 
-        return explode(PHP_EOL, trim($response));
+        return explode(PHP_EOL, trim($response)); // TODO throw on error
     }
 
     /**
@@ -838,28 +908,121 @@ class CurlFtpAdapter implements FilesystemAdapter
         // TODO: Implement visibility() method.
     }
 
-    public function mimeType(string $path): FileAttributes
-    {
-        // TODO: Implement mimeType() method.
-    }
-
-    public function lastModified(string $path): FileAttributes
-    {
-        // TODO: Implement lastModified() method.
-    }
-
     public function fileSize(string $path): FileAttributes
     {
         // TODO: Implement fileSize() method.
     }
 
-    public function listContents(string $path, bool $deep): iterable
+    private function normalizeListing(array $listing, string $prefix = ''): Generator
     {
-        // TODO: Implement listContents() method.
+        $base = $prefix;
+
+        foreach ($listing as $item) {
+            if ($item === '' || preg_match('#.* \.(\.)?$|^total#', $item)) {
+                continue;
+            }
+
+            if (preg_match('#^.*:$#', $item)) {
+                $base = preg_replace('~^\./*|:$~', '', $item);
+                continue;
+            }
+
+            yield $this->normalizeObject($item, $base);
+        }
     }
 
-    public function move(string $source, string $destination, Config $config): void
+    private function normalizeObject(string $item, string $base): StorageAttributes
     {
-        // TODO: Implement move() method.
+        $this->systemType === null && $this->systemType = $this->detectSystemType($item);
+
+        if ($this->systemType === self::SYSTEM_TYPE_UNIX) {
+            return $this->normalizeUnixObject($item, $base);
+        }
+
+        return $this->normalizeWindowsObject($item, $base);
+    }
+
+    private function detectSystemType(string $item): string
+    {
+        return preg_match(
+            '/^[0-9]{2,4}-[0-9]{2}-[0-9]{2}/',
+            $item
+        ) ? self::SYSTEM_TYPE_WINDOWS : self::SYSTEM_TYPE_UNIX;
+    }
+
+    private function normalizeWindowsObject(string $item, string $base): StorageAttributes
+    {
+        $item = preg_replace('#\s+#', ' ', trim($item), 3);
+        $parts = explode(' ', $item, 4);
+
+        if (count($parts) !== 4) {
+            throw new InvalidListResponseReceived("Metadata can't be parsed from item '$item' , not enough parts.");
+        }
+
+        [$date, $time, $size, $name] = $parts;
+        $path = $base === '' ? $name : rtrim($base, '/') . '/' . $name;
+
+        if ($size === '<DIR>') {
+            return new DirectoryAttributes($path);
+        }
+
+        // Check for the correct date/time format
+        $format = strlen($date) === 8 ? 'm-d-yH:iA' : 'Y-m-dH:i';
+        $dt = DateTime::createFromFormat($format, $date . $time);
+        $lastModified = $dt ? $dt->getTimestamp() : (int) strtotime("$date $time");
+
+        return new FileAttributes($path, (int) $size, null, $lastModified);
+    }
+
+    private function normalizeUnixObject(string $item, string $base): StorageAttributes
+    {
+        $item = preg_replace('#\s+#', ' ', trim($item), 7);
+        $parts = explode(' ', $item, 9);
+
+        if (count($parts) !== 9) {
+            throw new InvalidListResponseReceived("Metadata can't be parsed from item '$item' , not enough parts.");
+        }
+
+        [$permissions, /* $number */, /* $owner */, /* $group */, $size, $month, $day, $timeOrYear, $name] = $parts;
+        $isDirectory = $this->listingItemIsDirectory($permissions);
+        $permissions = $this->normalizePermissions($permissions);
+        $path = $base === '' ? $name : rtrim($base, '/') . '/' . $name;
+        $lastModified = $this->timestampsOnUnixListingsEnabled() ? $this->normalizeUnixTimestamp(
+            $month,
+            $day,
+            $timeOrYear
+        ) : null;
+
+        if ($isDirectory) {
+            return new DirectoryAttributes(
+                $path, $this->visibilityConverter->inverseForDirectory($permissions), $lastModified
+            );
+        }
+
+        $visibility = $this->visibilityConverter->inverseForFile($permissions);
+
+        return new FileAttributes($path, (int) $size, $visibility, $lastModified);
+    }
+
+    private function listingItemIsDirectory(string $permissions): bool
+    {
+        return substr($permissions, 0, 1) === 'd';
+    }
+
+    private function normalizeUnixTimestamp(string $month, string $day, string $timeOrYear): int
+    {
+        if (is_numeric($timeOrYear)) {
+            $year = $timeOrYear;
+            $hour = '00';
+            $minute = '00';
+        } else {
+            $year = date('Y');
+            [$hour, $minute] = explode(':', $timeOrYear);
+        }
+        $seconds = '00';
+
+        $dateTime = DateTime::createFromFormat('Y-M-j-G:i:s', "{$year}-{$month}-{$day}-{$hour}:{$minute}:{$seconds}");
+
+        return $dateTime->getTimestamp();
     }
 }

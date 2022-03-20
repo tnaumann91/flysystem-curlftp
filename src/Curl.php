@@ -107,4 +107,9 @@ class Curl
 
         return $result;
     }
+
+    public function getLastError() : string
+    {
+        return curl_error($this->curl);
+    }
 }
