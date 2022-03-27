@@ -1010,24 +1010,6 @@ class CurlFtpAdapter implements FilesystemAdapter
         }
     }
 
-    /**
-     * Set the connection root.
-     */
-    protected function setConnectionRoot(): void
-    {
-        $root = $this->getRoot();
-        if (empty($root)) {
-            return;
-        }
-
-        // We can't use the getConnection, because it will lead to an infinite cycle
-        $response = $this->rawCommand($this->connection, 'CWD '.$root);
-        [$code] = explode(' ', end($response), 2);
-        if ((int) $code !== 250) {
-            throw new RuntimeException('Root is invalid or does not exist: '.$this->getRoot());
-        }
-    }
-
     public function fileExists(string $path): bool
     {
         // TODO: Implement fileExists() method.
