@@ -3,7 +3,7 @@
 namespace VladimirYuldashev\Flysystem\Tests;
 
 use League\Flysystem\Config;
-use League\Flysystem\Util;
+use League\Flysystem\UnableToCopyFile;
 
 class CurlFtpAdapterTest extends TestCase
 {
@@ -11,75 +11,14 @@ class CurlFtpAdapterTest extends TestCase
      * @dataProvider filesProvider
      *
      * @param $filename
+     * @throws \League\Flysystem\FilesystemException
      */
     public function testWrite($filename): void
     {
         $contents = $this->faker()->text;
 
-        $result = $this->adapter->write($filename, $contents, new Config);
-
-        $this->assertSame([
-            'type' => 'file',
-            'path' => $filename,
-            'contents' => $contents,
-            'mimetype' => Util::guessMimeType($this->getResourceAbsolutePath($filename), $contents),
-        ], $result);
-
-        $this->assertEquals($contents, $this->getResourceContent($filename));
-    }
-
-    /**
-     * @dataProvider filesProvider
-     *
-     * @param $filename
-     */
-    public function testUpdate($filename): void
-    {
-        $contents = $this->faker()->text;
-
         $this->adapter->write($filename, $contents, new Config);
-        $this->assertEquals($contents, $this->getResourceContent($filename));
-
-        $newContents = $this->faker()->text;
-        $result = $this->adapter->update($filename, $newContents, new Config);
-
-        $this->assertSame([
-            'type' => 'file',
-            'path' => $filename,
-            'contents' => $newContents,
-            'mimetype' => Util::guessMimeType($this->getResourceAbsolutePath($filename), $contents),
-        ], $result);
-
-        $this->assertNotEquals($contents, $this->getResourceContent($filename));
-        $this->assertEquals($newContents, $this->getResourceContent($filename));
-    }
-
-    /**
-     * @dataProvider filesProvider
-     *
-     * @param $filename
-     */
-    public function testUpdateStream($filename): void
-    {
-        $contents = $this->faker()->text;
-
-        $stream = fopen('php://memory', 'rb+');
-        fwrite($stream, $contents);
-        rewind($stream);
-
-        $this->adapter->writeStream($filename, $stream, new Config);
-        $this->assertEquals($contents, $this->getResourceContent($filename));
-
-        $newContents = $this->faker()->text;
-
-        $stream = fopen('php://memory', 'rb+');
-        fwrite($stream, $newContents);
-        rewind($stream);
-
-        $this->adapter->updateStream($filename, $stream, new Config);
-
-        $this->assertNotEquals($contents, $this->getResourceContent($filename));
-        $this->assertEquals($newContents, $this->getResourceContent($filename));
+        $this->assertSame($contents, $this->adapter->read($filename));
     }
 
     /**
