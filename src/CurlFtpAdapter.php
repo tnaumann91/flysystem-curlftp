@@ -1103,6 +1103,7 @@ class CurlFtpAdapter implements FilesystemAdapter
         ) ? self::SYSTEM_TYPE_WINDOWS : self::SYSTEM_TYPE_UNIX;
     }
 
+    /** @noinspection HtmlDeprecatedTag */
     private function normalizeWindowsObject(string $item, string $base): StorageAttributes
     {
         $item = preg_replace('#\s+#', ' ', trim($item), 3);
