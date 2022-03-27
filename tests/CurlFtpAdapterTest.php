@@ -60,7 +60,6 @@ class CurlFtpAdapterTest extends TestCase
         $this->assertEquals($this->adapter->read($filename), $this->adapter->read('bar'));
 
         $this->expectException(UnableToCopyFile::class);
-        $this->expectExceptionMessage('Unable to copy file from foo-bar to bar-foo');
         $this->adapter->copy('foo-bar', 'bar-foo', new Config());
     }
 
