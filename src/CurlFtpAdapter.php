@@ -397,11 +397,15 @@ class CurlFtpAdapter implements FilesystemAdapter
      */
     public function write(string $path, string $contents, Config $config) : void
     {
-        $stream = fopen('php://temp', 'w+b');
-        fwrite($stream, $contents);
-        rewind($stream);
+        try {
+            $writeStream = fopen('php://temp', 'w+b');
+            fwrite($writeStream, $contents);
+            rewind($writeStream);
 
-        $this->writeStream($path, $stream, $config);
+            $this->writeStream($path, $writeStream, $config);
+        } finally {
+            isset($writeStream) && is_resource($writeStream) && fclose($writeStream);
+        }
     }
 
     /**
