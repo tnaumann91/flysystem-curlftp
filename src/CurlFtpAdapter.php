@@ -615,8 +615,9 @@ class CurlFtpAdapter implements FilesystemAdapter
     public function delete(string $path) : void
     {
         $connection = $this->getConnection();
+        $location = $this->prefixer()->prefixPath($path);
 
-        $response = $this->rawCommand($connection, 'DELE '.$path);
+        $response = $this->rawCommand($connection, 'DELE ' . $this->escapePath($location));
         [$code] = explode(' ', end($response), 2);
 
         if ((int) $code !== 250) {
