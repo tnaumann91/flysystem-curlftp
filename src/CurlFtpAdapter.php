@@ -10,6 +10,7 @@ use League\Flysystem\FileAttributes;
 use League\Flysystem\FilesystemAdapter;
 use League\Flysystem\FilesystemException;
 use League\Flysystem\Ftp\InvalidListResponseReceived;
+use League\Flysystem\PathPrefixer;
 use League\Flysystem\StorageAttributes;
 use League\Flysystem\UnableToCopyFile;
 use League\Flysystem\UnableToCreateDirectory;
@@ -351,9 +352,12 @@ class CurlFtpAdapter implements FilesystemAdapter
         }
 
         $this->pingConnection();
+        $this->rootDirectory = $this->resolveConnectionRoot($this->connection);
+        $this->prefixer = new PathPrefixer($this->rootDirectory);
         $this->connectionTimestamp = time();
         $this->setUtf8Mode();
-        $this->setConnectionRoot();
+        $this->rootDirectory = $this->resolveConnectionRoot($this->connection);
+        $this->prefixer = new PathPrefixer($this->rootDirectory);
     }
 
     /**
@@ -421,9 +425,17 @@ class CurlFtpAdapter implements FilesystemAdapter
     public function writeStream(string $path, $contents, Config $config) : void
     {
         $connection = $this->getConnection();
+        $location = $this->prefixer()->prefixPath($path);
+
+        try {
+            $this->ensureParentDirectoryExists($location, $config->get(Config::OPTION_DIRECTORY_VISIBILITY));
+        } catch (UnableToCreateDirectory $exception) {
+            throw UnableToWriteFile::atLocation($location, 'creating parent directory failed', $exception);
+        }
+
 
         $result = $connection->exec([
-            CURLOPT_URL => $this->getBaseUri().'/'.$path,
+            CURLOPT_URL => $this->getBaseUri().'/'. ltrim(rawurlencode($location), '/'),
             CURLOPT_UPLOAD => 1,
             CURLOPT_INFILE => $contents,
         ]);
@@ -1028,5 +1040,90 @@ class CurlFtpAdapter implements FilesystemAdapter
         $dateTime = DateTime::createFromFormat('Y-M-j-G:i:s', "{$year}-{$month}-{$day}-{$hour}:{$minute}:{$seconds}");
 
         return $dateTime->getTimestamp();
+    }
+
+    private function ensureParentDirectoryExists(string $path, ?string $visibility): void
+    {
+        $dirname = dirname($path);
+
+        if ($dirname === '' || $dirname === '.') {
+            return;
+        }
+
+        $this->ensureDirectoryExists($dirname, $visibility);
+    }
+
+    /**
+     * @param string $dirname
+     * @param string|null $visibility
+     */
+    private function ensureDirectoryExists(string $dirname, ?string $visibility): void
+    {
+        $connection = $this->getConnection();
+
+        $dirPath = '';
+        $parts = explode('/', trim($dirname, '/'));
+        $mode = $visibility ? $this->visibilityConverter->forDirectory($visibility) : false;
+
+        foreach ($parts as $part) {
+            $dirPath .= '/' . $part;
+            $location = $this->prefixer()->prefixPath($dirPath);
+
+            $response = $this->rawCommand($connection, 'CWD '. $location);
+            [$code, $message] = explode(' ', end($response), 2);
+            if ((int) $code === 250) {
+                continue;
+            }
+
+            $response = $this->rawCommand($connection, 'MKD '. $location);
+            [$code, $message] = explode(' ', end($response), 2);
+
+            if ((int) $code === 250) {
+                $errorMessage = $message ?? 'unable to create the directory';
+                throw UnableToCreateDirectory::atLocation($dirPath, $errorMessage);
+            }
+
+            if ($mode !== false) {
+                try {
+                    $this->setVisibility($location, $visibility);
+                } catch (UnableToSetVisibility $exception) {
+                    throw UnableToCreateDirectory::atLocation($dirPath, 'unable to chmod the directory');
+                }
+            }
+        }
+    }
+
+    /**
+     * @param Curl $connection
+     * @return string
+     */
+    private function resolveConnectionRoot(Curl $connection): string
+    {
+        $root = $this->getRoot();
+
+        if ($root !== '') {
+            $response = $this->rawCommand($connection, 'CWD ' . $root);
+            [$code, $message] = explode(' ', end($response), 2);
+            if ((int) $code !== 250) {
+                throw new RuntimeException('Root is invalid or does not exist: '.$root);
+            }
+        }
+
+        $response = $this->rawCommand($connection, 'PWD');
+        [$code, $message] = explode(' ', end($response), 2);
+
+        return trim($message, '"');
+    }
+
+    /**
+     * @return PathPrefixer
+     */
+    private function prefixer(): PathPrefixer
+    {
+        if ($this->rootDirectory === null) {
+            $this->getConnection();
+        }
+
+        return $this->prefixer;
     }
 }
