@@ -67,12 +67,11 @@ class CurlFtpAdapterTest extends TestCase
      */
     public function testDelete($filename): void
     {
-        $this->adapter->write($filename, 'foo', new Config);
+        $this->adapter->write($filename, 'foo', new Config());
 
-        $result = $this->adapter->delete($filename);
+        $this->adapter->delete($filename);
 
-        $this->assertTrue($result);
-        $this->assertFalse($this->adapter->has($filename));
+        $this->assertFalse($this->adapter->fileExists($filename));
     }
 
     public function testCreateAndDeleteDir(): void
