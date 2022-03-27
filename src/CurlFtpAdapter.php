@@ -651,16 +651,17 @@ class CurlFtpAdapter implements FilesystemAdapter
      * @param string $path directory name
      * @param Config $config
      *
-     * @return array|false
+     * @return void
      */
     public function createDirectory(string $path, Config $config) : void
     {
         $connection = $this->getConnection();
+        $location = $this->prefixer()->prefixPath($path);
 
-        $response = $this->rawCommand($connection, 'MKD '.$path);
+        $response = $this->rawCommand($connection, 'MKD ' . $this->escapePath($location));
         [$code] = explode(' ', end($response), 2);
         if ((int) $code !== 257) {
-            throw UnableToCreateDirectory::atLocation($path, "Server responded with code {$code}");
+            throw UnableToCreateDirectory::atLocation($location, "Server responded with code {$code}");
         }
     }
 
