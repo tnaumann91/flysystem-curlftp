@@ -571,16 +571,18 @@ class CurlFtpAdapter implements FilesystemAdapter
     public function move(string $source, string $destination, Config $config) : void
     {
         $connection = $this->getConnection();
+        $sourceLocation = $this->prefixer()->prefixPath($source);
+        $destinationLocation = $this->prefixer()->prefixPath($destination);
 
         $moveCommands = [
-            'RNFR '.$source,
-            'RNTO '.$destination,
+            'RNFR ' . $this->escapePath($sourceLocation),
+            'RNTO ' . $this->escapePath($destinationLocation),
         ];
 
         $response = $this->rawPost($connection, $moveCommands);
-        list($code) = explode(' ', end($response), 2);
+        [$code] = explode(' ', end($response), 2);
 
-        if ((int) $code === 250) {
+        if ((int) $code !== 250) {
             throw UnableToMoveFile::fromLocationTo($source, $destination);
         }
     }
