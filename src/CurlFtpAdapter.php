@@ -538,15 +538,14 @@ class CurlFtpAdapter implements FilesystemAdapter
      **/
     public function writeStream(string $path, $contents, Config $config) : void
     {
-        $connection = $this->getConnection();
-        $location = $this->prefixer()->prefixPath($path);
-
         try {
-            $this->ensureParentDirectoryExists($location, $config->get(Config::OPTION_DIRECTORY_VISIBILITY));
+            $this->ensureParentDirectoryExists($path, $config->get(Config::OPTION_DIRECTORY_VISIBILITY));
         } catch (UnableToCreateDirectory $exception) {
-            throw UnableToWriteFile::atLocation($location, 'creating parent directory failed', $exception);
+            throw UnableToWriteFile::atLocation($path, 'creating parent directory failed', $exception);
         }
 
+        $connection = $this->getConnection();
+        $location = $this->prefixer()->prefixPath($path);
 
         $result = $connection->exec([
             CURLOPT_URL => $this->getBaseUri().'/'. ltrim(rawurlencode($location), '/'),
@@ -569,6 +568,12 @@ class CurlFtpAdapter implements FilesystemAdapter
      */
     public function move(string $source, string $destination, Config $config) : void
     {
+        try {
+            $this->ensureParentDirectoryExists($destination, $config->get(Config::OPTION_DIRECTORY_VISIBILITY));
+        } catch (UnableToCreateDirectory $exception) {
+            throw UnableToWriteFile::atLocation($destination, 'creating parent directory failed', $exception);
+        }
+
         $connection = $this->getConnection();
         $sourceLocation = $this->prefixer()->prefixPath($source);
         $destinationLocation = $this->prefixer()->prefixPath($destination);
