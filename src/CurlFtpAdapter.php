@@ -467,9 +467,9 @@ class CurlFtpAdapter implements FilesystemAdapter
         }
 
         $this->pingConnection();
+        $this->connectionTimestamp = time();
         $this->rootDirectory = $this->resolveConnectionRoot($this->connection);
         $this->prefixer = new PathPrefixer($this->rootDirectory);
-        $this->connectionTimestamp = time();
         $this->setUtf8Mode();
         $this->rootDirectory = $this->resolveConnectionRoot($this->connection);
         $this->prefixer = new PathPrefixer($this->rootDirectory);
@@ -670,8 +670,9 @@ class CurlFtpAdapter implements FilesystemAdapter
     {
         $connection = $this->getConnection();
         $mode = $this->visibilityConverter->forFile($visibility);
+        $location = $this->prefixer()->prefixPath($path);
 
-        $request = sprintf('SITE CHMOD %o %s', $mode, $path);
+        $request = sprintf('SITE CHMOD %o %s', $mode, $this->escapePath($location));
         $response = $this->rawCommand($connection, $request);
         [$code] = explode(' ', end($response), 2);
 
@@ -744,7 +745,7 @@ class CurlFtpAdapter implements FilesystemAdapter
             return ['type' => 'dir', 'path' => ''];
         }
 
-        $request = rtrim('LIST -A '.$this->normalizePath($path));
+        $request = rtrim('LIST -A '.$this->escapePath($path));
 
         $connection = $this->getConnection();
         $result = $connection->exec([CURLOPT_CUSTOMREQUEST => $request]);
@@ -782,7 +783,8 @@ class CurlFtpAdapter implements FilesystemAdapter
      */
     public function lastModified(string $path) : FileAttributes
     {
-        $response = $this->rawCommand($this->getConnection(), 'MDTM '.$path);
+        $location = $this->prefixer()->prefixPath($path);
+        $response = $this->rawCommand($this->getConnection(), 'MDTM '.$this->escapePath($location));
         [$code, $time] = explode(' ', end($response), 2);
         if ($code !== '213' || $time < 0) {
             throw UnableToRetrieveMetadata::lastModified($path);
@@ -811,7 +813,7 @@ class CurlFtpAdapter implements FilesystemAdapter
         if ($deep === true) {
             yield from $this->listDirectoryContentsRecursive($path);
         } else {
-            $request = rtrim('LIST -aln '.$this->normalizePath($path));
+            $request = rtrim('LIST -aln '.$this->escapePath($path));
 
             $connection = $this->getConnection();
             $result = $connection->exec([CURLOPT_CUSTOMREQUEST => $request]);
@@ -834,7 +836,7 @@ class CurlFtpAdapter implements FilesystemAdapter
      */
     protected function listDirectoryContentsRecursive(string $directory): Generator
     {
-        $request = rtrim('LIST -aln '.$this->normalizePath($directory));
+        $request = rtrim('LIST -aln '.$this->escapePath($directory));
 
         $connection = $this->getConnection();
         $listing = $connection->exec([CURLOPT_CUSTOMREQUEST => $request]);
@@ -889,16 +891,14 @@ class CurlFtpAdapter implements FilesystemAdapter
      *
      * @return string
      */
-    protected function normalizePath(string $path): string
+    protected function escapePath(string $path): string
     {
         if (empty($path)) {
             return '';
         }
 
-        $path = Normalizer::normalize($path);// TODO use PathNormalizer
-
         if ($this->isPureFtpdServer()) {
-            $path = str_replace(' ', '\ ', $path);
+            $path = str_replace(['*', '[', ']'], ['\\*', '\\[', '\\]'], $path);
         }
 
         $path = str_replace('*', '\\*', $path);
@@ -1030,7 +1030,7 @@ class CurlFtpAdapter implements FilesystemAdapter
         $connection = $this->getConnection();
         $location = $this->prefixer()->prefixPath($path);
 
-        $result = $this->rawCommand($connection, 'SIZE ' . $location);
+        $result = $this->rawCommand($connection, 'SIZE ' . $this->escapePath($location));
         [$code, $message] = explode(' ', end($result), 2);
 
         if ((int) $code !== 213) {
@@ -1181,13 +1181,13 @@ class CurlFtpAdapter implements FilesystemAdapter
             $dirPath .= '/' . $part;
             $location = $this->prefixer()->prefixPath($dirPath);
 
-            $response = $this->rawCommand($connection, 'CWD '. $location);
+            $response = $this->rawCommand($connection, 'CWD ' . $this->escapePath($location));
             [$code, $message] = explode(' ', end($response), 2);
             if ((int) $code === 250) {
                 continue;
             }
 
-            $response = $this->rawCommand($connection, 'MKD '. $location);
+            $response = $this->rawCommand($connection, 'MKD ' . $this->escapePath($location));
             [$code, $message] = explode(' ', end($response), 2);
 
             if ((int) $code === 250) {
@@ -1214,7 +1214,7 @@ class CurlFtpAdapter implements FilesystemAdapter
         $root = $this->getRoot();
 
         if ($root !== '') {
-            $response = $this->rawCommand($connection, 'CWD ' . $root);
+            $response = $this->rawCommand($connection, 'CWD ' . $this->escapePath($root));
             [$code, $message] = explode(' ', end($response), 2);
             if ((int) $code !== 250) {
                 throw new RuntimeException('Root is invalid or does not exist: '.$root);
