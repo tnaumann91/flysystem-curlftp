@@ -714,15 +714,16 @@ class CurlFtpAdapter implements FilesystemAdapter
         }
 
         $connection = $this->getConnection();
+        $location = $this->prefixer()->prefixPath($path);
 
         $result = $connection->exec([
-            CURLOPT_URL => $this->getBaseUri().'/'.$path,
+            CURLOPT_URL => $this->getBaseUri() . '/' . ltrim(rawurlencode($location), '/'),
             CURLOPT_FILE => $stream,
         ]);
 
-        if (! $result) {
+        if ($result === false) {
             fclose($stream);
-            throw UnableToReadFile::fromLocation($path, $this->getConnection()->getLastError());
+            throw UnableToReadFile::fromLocation($location, $this->getConnection()->getLastError());
         }
 
         rewind($stream);
