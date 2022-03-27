@@ -4,6 +4,7 @@ namespace VladimirYuldashev\Flysystem\Tests;
 
 use League\Flysystem\Config;
 use League\Flysystem\UnableToCopyFile;
+use League\Flysystem\UnableToDeleteDirectory;
 use League\Flysystem\UnableToRetrieveMetadata;
 use League\Flysystem\UnableToSetVisibility;
 
@@ -76,13 +77,11 @@ class CurlFtpAdapterTest extends TestCase
 
     public function testCreateAndDeleteDir(): void
     {
-        $result = $this->adapter->createDir('foo', new Config);
+        $this->adapter->createDirectory('foo', new Config());
+        $this->adapter->deleteDirectory('foo');
 
-        $this->assertSame(['type' => 'dir', 'path' => 'foo'], $result);
-
-        $result = $this->adapter->deleteDir('foo');
-
-        $this->assertTrue($result);
+        $this->expectException(UnableToDeleteDirectory::class);
+        $this->adapter->deleteDirectory('bar');
     }
 
     /**
