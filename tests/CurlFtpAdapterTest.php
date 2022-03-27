@@ -167,7 +167,7 @@ class CurlFtpAdapterTest extends TestCase
         $this->assertSame('application/json', $fileAttributes->mimeType());
 
         $this->expectException(UnableToRetrieveMetadata::class);
-        $this->adapter->mimetype('bar.zbar');
+        $this->adapter->mimetype('bar.json');
     }
 
     public function testLastModified(): void

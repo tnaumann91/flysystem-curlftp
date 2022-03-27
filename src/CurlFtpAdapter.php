@@ -25,7 +25,6 @@ use League\Flysystem\UnixVisibility\PortableVisibilityConverter;
 use League\Flysystem\UnixVisibility\VisibilityConverter;
 use League\MimeTypeDetection\ExtensionMimeTypeDetector;
 use League\MimeTypeDetection\MimeTypeDetector;
-use \Normalizer;
 use RuntimeException;
 
 class CurlFtpAdapter implements FilesystemAdapter
@@ -771,7 +770,22 @@ class CurlFtpAdapter implements FilesystemAdapter
      */
     public function mimetype(string $path) : FileAttributes
     {
-        $mimeType = $this->mimeTypeDetector->detectMimeType($path, '');
+        $contents = '';
+
+        if (! $this->fileExists($path)) {
+            throw UnableToRetrieveMetadata::mimeType($path, 'File does not exist');
+        }
+
+        if (! $this->mimeTypeDetector instanceof ExtensionMimeTypeDetector) {
+            try {
+                $contents = $this->read($path);
+            } catch (UnableToReadFile $exception) {
+                throw UnableToRetrieveMetadata::mimeType($path, 'File could not be read', $exception);
+            }
+
+        }
+
+        $mimeType = $this->mimeTypeDetector->detectMimeType($path, $contents);
         if ($mimeType === null) {
             throw UnableToRetrieveMetadata::mimeType($path, 'Unknown extension');
         }
