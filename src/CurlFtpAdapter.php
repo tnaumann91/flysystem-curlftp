@@ -1022,7 +1022,30 @@ class CurlFtpAdapter implements FilesystemAdapter
 
     public function visibility(string $path): FileAttributes
     {
-        // TODO: Implement visibility() method.
+        return $this->fetchMetadata($path, StorageAttributes::ATTRIBUTE_VISIBILITY);
+    }
+
+    private function fetchMetadata(string $path, string $type): FileAttributes
+    {
+        $location = $this->prefixer()->prefixPath($path);
+
+        $object = $this->rawCommand($this->getConnection(), 'STAT ' . $this->escapePath($location));
+
+        if (empty($object) || count($object) < 3 || substr($object[count($object) - 2], 0, 5) === "ftpd:") {
+            throw UnableToRetrieveMetadata::create($path, $type, error_get_last()['message'] ?? '');
+        }
+
+        $attributes = $this->normalizeObject($object[count($object) - 2], '');
+
+        if ( ! $attributes instanceof FileAttributes) {
+            throw UnableToRetrieveMetadata::create(
+                $path,
+                $type,
+                'expected file, ' . ($attributes instanceof DirectoryAttributes ? 'directory found' : 'nothing found')
+            );
+        }
+
+        return $attributes;
     }
 
     public function fileSize(string $path): FileAttributes
