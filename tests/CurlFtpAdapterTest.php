@@ -3,6 +3,7 @@
 namespace VladimirYuldashev\Flysystem\Tests;
 
 use League\Flysystem\Config;
+use League\Flysystem\FilesystemException;
 use League\Flysystem\UnableToCopyFile;
 use League\Flysystem\UnableToDeleteDirectory;
 use League\Flysystem\UnableToRetrieveMetadata;
@@ -14,13 +15,13 @@ class CurlFtpAdapterTest extends TestCase
      * @dataProvider filesProvider
      *
      * @param $filename
-     * @throws \League\Flysystem\FilesystemException
+     * @throws FilesystemException
      */
     public function testWrite($filename): void
     {
         $contents = $this->faker()->text;
 
-        $this->adapter->write($filename, $contents, new Config);
+        $this->adapter->write($filename, $contents, new Config());
         $this->assertSame($contents, $this->adapter->read($filename));
     }
 
@@ -28,6 +29,7 @@ class CurlFtpAdapterTest extends TestCase
      * @dataProvider filesProvider
      *
      * @param $filename
+     * @throws FilesystemException
      */
     public function testMove($filename): void
     {
@@ -45,6 +47,7 @@ class CurlFtpAdapterTest extends TestCase
      * @dataProvider filesProvider
      *
      * @param $filename
+     * @throws FilesystemException
      */
     public function testCopy($filename): void
     {
@@ -65,6 +68,7 @@ class CurlFtpAdapterTest extends TestCase
      * @dataProvider filesProvider
      *
      * @param $filename
+     * @throws FilesystemException
      */
     public function testDelete($filename): void
     {
@@ -88,6 +92,7 @@ class CurlFtpAdapterTest extends TestCase
      * @dataProvider filesProvider
      *
      * @param $filename
+     * @throws FilesystemException
      */
     public function testGetSetVisibility($filename): void
     {
@@ -131,6 +136,7 @@ class CurlFtpAdapterTest extends TestCase
      * @dataProvider filesProvider
      *
      * @param $name
+     * @throws FilesystemException
      */
     public function testFileExists($name): void
     {
@@ -147,6 +153,7 @@ class CurlFtpAdapterTest extends TestCase
      * @dataProvider withSubFolderProvider
      *
      * @param $path
+     * @throws FilesystemException
      */
     public function testFileExistsInSubFolder($path): void
     {
@@ -180,6 +187,7 @@ class CurlFtpAdapterTest extends TestCase
      * @dataProvider withSubFolderProvider
      *
      * @param $path
+     * @throws FilesystemException
      */
     public function testListContents($path): void
     {
@@ -193,13 +201,14 @@ class CurlFtpAdapterTest extends TestCase
      * @dataProvider withSubFolderProvider
      *
      * @param $path
+     * @throws FilesystemException
      */
     public function testListContentsEmptyPath($path): void
     {
         $this->assertCount(0, $this->adapter->listContents(dirname($path)));
     }
 
-    public function filesProvider()
+    public function filesProvider(): array
     {
         return [
             ['test.txt'],
@@ -215,7 +224,7 @@ class CurlFtpAdapterTest extends TestCase
         ];
     }
 
-    public function withSubFolderProvider()
+    public function withSubFolderProvider(): array
     {
         return [
             ['test/test.txt'],
