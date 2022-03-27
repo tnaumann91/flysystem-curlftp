@@ -47,16 +47,17 @@ class CurlFtpAdapterTest extends TestCase
      */
     public function testCopy($filename): void
     {
-        $this->adapter->write($filename, 'foo', new Config);
+        $this->adapter->write($filename, 'foo', new Config());
 
-        $result = $this->adapter->copy($filename, 'bar');
+        $this->adapter->copy($filename, 'bar', new Config());
 
-        $this->assertTrue($result);
-        $this->assertNotFalse($this->adapter->has($filename));
-        $this->assertNotFalse($this->adapter->has('bar'));
-        $this->assertEquals($this->adapter->read($filename)['contents'], $this->adapter->read('bar')['contents']);
+        $this->assertNotFalse($this->adapter->fileExists($filename));
+        $this->assertNotFalse($this->adapter->fileExists('bar'));
+        $this->assertEquals($this->adapter->read($filename), $this->adapter->read('bar'));
 
-        $this->assertFalse($this->adapter->copy('foo-bar', 'bar-foo'));
+        $this->expectException(UnableToCopyFile::class);
+        $this->expectExceptionMessage('Unable to copy file from foo-bar to bar-foo');
+        $this->adapter->copy('foo-bar', 'bar-foo', new Config());
     }
 
     /**
