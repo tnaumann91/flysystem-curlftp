@@ -110,6 +110,6 @@ class Curl
 
     public function getLastError() : string
     {
-        return 'Code: ' . curl_errno($this->curl) . ', Message: ' . curl_error($this->curl);
+        return 'Code: '.curl_errno($this->curl).', Message: '.curl_error($this->curl);
     }
 }
