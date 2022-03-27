@@ -63,6 +63,7 @@ class CurlFtpAdapter implements FilesystemAdapter
     {
         $this->visibilityConverter = $visibilityConverter ?? new PortableVisibilityConverter();
         $this->mimeTypeDetector = $mimeTypeDetector ?? new FinfoMimeTypeDetector();
+        $this->setConfig($options);
     }
 
     private $visibilityConverter;
@@ -78,14 +79,23 @@ class CurlFtpAdapter implements FilesystemAdapter
     /** @var string */
     private $host;
 
-    /** @var int */
-    private $port;
+    /** @var string */
+    private $username;
 
     /** @var string */
-    private $root;
+    private $password;
+
+    /** @var int */
+    private $port = 21;
+
+    /** @var int */
+    private $timeout = 90;
+
+    /** @var string */
+    private $root = '';
 
     /** @var bool */
-    protected $isPureFtpd;
+    protected $isPureFtpd = false;
 
     /** @var bool */
     protected $ftps = true;
@@ -128,12 +138,112 @@ class CurlFtpAdapter implements FilesystemAdapter
     private $ssl;
 
     /** @var bool */
-    private $enableTimestampsOnUnixListings;
+    private $enableTimestampsOnUnixListings = false;
 
     /**
      * @var null|string
      */
     private $systemType;
+
+    /**
+     * @var string
+     */
+    private $rootDirectory = null;
+
+    /** @var PathPrefixer */
+    private $prefixer;
+
+    public function setConfig(array $config): self
+    {
+        foreach ($this->configurable as $setting) {
+            if ( ! isset($config[$setting])) {
+                continue;
+            }
+
+            $method = 'set' . ucfirst($setting);
+
+            if (method_exists($this, $method)) {
+                $this->$method($config[$setting]);
+            } else {
+                throw new \Exception('missing setter: ' . $setting);
+            }
+        }
+
+        return $this;
+    }
+
+    /**
+     * @param string $host
+     */
+    public function setHost(string $host): void
+    {
+        $this->host = $host;
+    }
+
+    /**
+     * @param int $port
+     */
+    public function setPort(int $port): void
+    {
+        $this->port = $port;
+    }
+
+    /**
+     * @return string
+     */
+    public function getUsername(): string
+    {
+        return $this->username;
+    }
+
+    /**
+     * @param string $username
+     */
+    public function setUsername(string $username): void
+    {
+        $this->username = $username;
+    }
+
+    /**
+     * @return string
+     */
+    public function getPassword(): string
+    {
+        return $this->password;
+    }
+
+    /**
+     * @param string $password
+     */
+    public function setPassword(string $password): void
+    {
+        $this->password = $password;
+    }
+
+    /**
+     * @param string $root
+     */
+    public function setRoot(string $root): void
+    {
+        $this->root = $root;
+    }
+
+
+    /**
+     * @return int
+     */
+    public function getTimeout(): int
+    {
+        return $this->timeout;
+    }
+
+    /**
+     * @param int $timeout
+     */
+    public function setTimeout(int $timeout): void
+    {
+        $this->timeout = $timeout;
+    }
 
     /**
      * @param bool $ftps
@@ -218,7 +328,7 @@ class CurlFtpAdapter implements FilesystemAdapter
     /**
      * @return string
      */
-    public function getProxyHost(): string
+    public function getProxyHost(): ?string
     {
         return $this->proxyHost;
     }
@@ -234,7 +344,7 @@ class CurlFtpAdapter implements FilesystemAdapter
     /**
      * @return int
      */
-    public function getProxyPort(): int
+    public function getProxyPort(): ?int
     {
         return $this->proxyPort;
     }
@@ -250,7 +360,7 @@ class CurlFtpAdapter implements FilesystemAdapter
     /**
      * @return string
      */
-    public function getProxyUsername(): string
+    public function getProxyUsername(): ?string
     {
         return $this->proxyUsername;
     }
@@ -297,7 +407,7 @@ class CurlFtpAdapter implements FilesystemAdapter
      */
     public function timestampsOnUnixListingsEnabled(): bool
     {
-        return $this->enableTimestampsOnUnixListings;
+        return $this->enableTimestampsOnUnixListings ?? false;
     }
 
     /**
@@ -305,6 +415,11 @@ class CurlFtpAdapter implements FilesystemAdapter
      */
     private function getConnection(): Curl
     {
+        if ( ! $this->isConnected()) {
+            $this->disconnect();
+            $this->connect();
+        }
+
         return $this->connection;
     }
 
