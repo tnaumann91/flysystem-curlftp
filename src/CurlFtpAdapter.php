@@ -469,8 +469,6 @@ class CurlFtpAdapter implements FilesystemAdapter
         $this->rootDirectory = $this->resolveConnectionRoot($this->connection);
         $this->prefixer = new PathPrefixer($this->rootDirectory);
         $this->setUtf8Mode();
-        $this->rootDirectory = $this->resolveConnectionRoot($this->connection);
-        $this->prefixer = new PathPrefixer($this->rootDirectory);
     }
 
     /**
@@ -920,7 +918,7 @@ class CurlFtpAdapter implements FilesystemAdapter
         }
 
         if ($this->isPureFtpdServer()) {
-            $path = str_replace(['*', '[', ']'], ['\\*', '\\[', '\\]'], $path);
+            return str_replace(['*', '[', ']'], ['\\*', '\\[', '\\]'], $path);
         }
 
         $path = str_replace('*', '\\*', $path);
@@ -1272,7 +1270,7 @@ class CurlFtpAdapter implements FilesystemAdapter
         $response = $this->rawCommand($connection, 'PWD');
         [$code, $message] = explode(' ', end($response), 2);
 
-        return trim($message, '"');
+        return $this->extractWorkingDirectoryFromMessage($message);
     }
 
     /**
@@ -1285,5 +1283,18 @@ class CurlFtpAdapter implements FilesystemAdapter
         }
 
         return $this->prefixer;
+    }
+
+    private function extractWorkingDirectoryFromMessage(string $message) {
+        $message = trim($message, '"');
+
+        if ($this->isPureFtpdServer()) {
+            $parts = explode('"', $message);
+            if (count($parts) > 0) {
+                return $parts[0];
+            }
+        }
+
+        return $message;
     }
 }
