@@ -4,6 +4,7 @@ namespace VladimirYuldashev\Flysystem\Tests;
 
 use League\Flysystem\Config;
 use League\Flysystem\UnableToCopyFile;
+use League\Flysystem\UnableToSetVisibility;
 
 class CurlFtpAdapterTest extends TestCase
 {
@@ -91,21 +92,20 @@ class CurlFtpAdapterTest extends TestCase
      */
     public function testGetSetVisibility($filename): void
     {
-        $this->adapter->write($filename, 'foo', new Config);
+        $this->adapter->write($filename, 'foo', new Config());
 
-        $result = $this->adapter->setVisibility($filename, 'public');
+        $this->adapter->setVisibility($filename, 'public');
+        $fileAttributes = $this->adapter->visibility($filename);
 
-        $this->assertNotFalse($result);
-        $this->assertSame('public', $result['visibility']);
-        $this->assertSame('public', $this->adapter->getVisibility($filename)['visibility']);
+        $this->assertSame('public', $fileAttributes->visibility());
 
-        $result = $this->adapter->setVisibility($filename, 'private');
+        $this->adapter->setVisibility($filename, 'private');
+        $fileAttributes = $this->adapter->visibility($filename);
 
-        $this->assertNotFalse($result);
-        $this->assertSame('private', $result['visibility']);
-        $this->assertSame('private', $this->adapter->getVisibility($filename)['visibility']);
+        $this->assertSame('private', $fileAttributes->visibility());
 
-        $this->assertFalse($this->adapter->setVisibility('bar', 'public'));
+        $this->expectException(UnableToSetVisibility::class);
+        $this->adapter->setVisibility('bar', 'public');
     }
 
     /**
