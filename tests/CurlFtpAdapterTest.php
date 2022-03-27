@@ -138,12 +138,15 @@ class CurlFtpAdapterTest extends TestCase
      *
      * @param $name
      */
-    public function testHas($name): void
+    public function testFileExists($name): void
     {
         $contents = $this->faker()->text;
         $this->createResourceFile($name, $contents);
 
-        $this->assertTrue((bool) $this->adapter->has($name));
+        $this->assertTrue($this->adapter->fileExists($name));
+
+        $fileName = $this->randomFileName();
+        $this->assertFalse($this->adapter->fileExists($fileName));
     }
 
     /**
@@ -151,12 +154,12 @@ class CurlFtpAdapterTest extends TestCase
      *
      * @param $path
      */
-    public function testHasInSubFolder($path): void
+    public function testFileExistsInSubFolder($path): void
     {
         $contents = $this->faker()->text;
         $this->createResourceFile($path, $contents);
 
-        $this->assertTrue((bool) $this->adapter->has($path));
+        $this->assertTrue($this->adapter->fileExists($path));
     }
 
     public function testGetMimeType(): void
