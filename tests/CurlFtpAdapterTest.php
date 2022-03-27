@@ -28,17 +28,16 @@ class CurlFtpAdapterTest extends TestCase
      *
      * @param $filename
      */
-    public function testRename($filename): void
+    public function testMove($filename): void
     {
-        $this->adapter->write($filename, 'foo', new Config);
+        $this->adapter->write($filename, 'foo', new Config());
 
         $newFilename = $this->randomFileName();
 
-        $result = $this->adapter->rename($filename, $newFilename);
+        $this->adapter->move($filename, $newFilename, new Config());
 
-        $this->assertTrue($result);
-        $this->assertFalse($this->adapter->has($filename));
-        $this->assertNotFalse($this->adapter->has($newFilename));
+        $this->assertFalse($this->adapter->fileExists($filename));
+        $this->assertNotFalse($this->adapter->fileExists($newFilename));
     }
 
     /**
