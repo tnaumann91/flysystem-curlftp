@@ -1285,7 +1285,8 @@ class CurlFtpAdapter implements FilesystemAdapter
         return $this->prefixer;
     }
 
-    private function extractWorkingDirectoryFromMessage(string $message) {
+    private function extractWorkingDirectoryFromMessage(string $message)
+    {
         $message = trim($message, '"');
 
         if ($this->isPureFtpdServer()) {
