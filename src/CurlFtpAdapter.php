@@ -563,25 +563,25 @@ class CurlFtpAdapter implements FilesystemAdapter
     /**
      * Rename a file.
      *
-     * @param string $path
-     * @param string $newpath
+     * @param string $source
+     * @param string $destination
      * @param Config $config
      * @return void
      */
-    public function move(string $path, string $newpath, Config $config) : void
+    public function move(string $source, string $destination, Config $config) : void
     {
         $connection = $this->getConnection();
 
         $moveCommands = [
-            'RNFR '.$path,
-            'RNTO '.$newpath,
+            'RNFR '.$source,
+            'RNTO '.$destination,
         ];
 
         $response = $this->rawPost($connection, $moveCommands);
         list($code) = explode(' ', end($response), 2);
 
         if ((int) $code === 250) {
-            throw UnableToMoveFile::fromLocationTo($path, $newpath);
+            throw UnableToMoveFile::fromLocationTo($source, $destination);
         }
     }
 
@@ -665,8 +665,6 @@ class CurlFtpAdapter implements FilesystemAdapter
      *
      * @param string $path
      * @param string $visibility
-     *
-     * @return array|false file meta data
      */
     public function setVisibility(string $path, string $visibility) : void
     {
@@ -687,7 +685,7 @@ class CurlFtpAdapter implements FilesystemAdapter
      *
      * @param string $path
      *
-     * @return array|false
+     * @return string
      */
     public function read(string $path) : string
     {
