@@ -635,12 +635,13 @@ class CurlFtpAdapter implements FilesystemAdapter
     public function deleteDirectory(string $path) : void
     {
         $connection = $this->getConnection();
+        $location = $this->prefixer()->prefixPath($path);
 
-        $response = $this->rawCommand($connection, 'RMD '.$path);
+        $response = $this->rawCommand($connection, 'RMD ' . $this->escapePath($location));
         [$code] = explode(' ', end($response), 2);
 
         if ((int) $code !== 250) {
-            throw UnableToDeleteFile::atLocation($path, "Server responded with code {$code}");
+            throw UnableToDeleteDirectory::atLocation($location, "Server responded with code {$code}");
         }
     }
 
