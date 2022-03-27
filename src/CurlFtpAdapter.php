@@ -1012,7 +1012,12 @@ class CurlFtpAdapter implements FilesystemAdapter
 
     public function fileExists(string $path): bool
     {
-        // TODO: Implement fileExists() method.
+        try {
+            $this->fileSize($path);
+            return true;
+        } catch (UnableToRetrieveMetadata $exception) {
+            return false;
+        }
     }
 
     public function visibility(string $path): FileAttributes
