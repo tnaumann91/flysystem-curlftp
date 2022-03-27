@@ -23,7 +23,7 @@ use League\Flysystem\UnableToSetVisibility;
 use League\Flysystem\UnableToWriteFile;
 use League\Flysystem\UnixVisibility\PortableVisibilityConverter;
 use League\Flysystem\UnixVisibility\VisibilityConverter;
-use League\MimeTypeDetection\FinfoMimeTypeDetector;
+use League\MimeTypeDetection\ExtensionMimeTypeDetector;
 use League\MimeTypeDetection\MimeTypeDetector;
 use \Normalizer;
 use RuntimeException;
@@ -62,7 +62,7 @@ class CurlFtpAdapter implements FilesystemAdapter
     )
     {
         $this->visibilityConverter = $visibilityConverter ?? new PortableVisibilityConverter();
-        $this->mimeTypeDetector = $mimeTypeDetector ?? new FinfoMimeTypeDetector();
+        $this->mimeTypeDetector = $mimeTypeDetector ?? new ExtensionMimeTypeDetector();
         $this->setConfig($options);
     }
 
