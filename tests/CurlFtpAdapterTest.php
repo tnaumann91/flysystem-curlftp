@@ -4,6 +4,7 @@ namespace VladimirYuldashev\Flysystem\Tests;
 
 use League\Flysystem\Config;
 use League\Flysystem\UnableToCopyFile;
+use League\Flysystem\UnableToRetrieveMetadata;
 use League\Flysystem\UnableToSetVisibility;
 
 class CurlFtpAdapterTest extends TestCase
@@ -166,9 +167,10 @@ class CurlFtpAdapterTest extends TestCase
         $this->assertFalse($this->adapter->getMimetype('bar.json'));
     }
 
-    public function testGetTimestamp(): void
+    public function testLastModified(): void
     {
-        $this->assertFalse($this->adapter->getTimestamp('foo'));
+        $this->expectException(UnableToRetrieveMetadata::class);
+        $this->adapter->lastModified('foo');
     }
 
     /**
