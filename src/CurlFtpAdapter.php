@@ -824,7 +824,7 @@ class CurlFtpAdapter implements FilesystemAdapter
                 $path = '';
             }
 
-            return $this->normalizeListing(explode(PHP_EOL, $result), $path);
+            yield from $this->normalizeListing(explode(PHP_EOL, $result), $path);
         }
     }
 
