@@ -1022,7 +1022,18 @@ class CurlFtpAdapter implements FilesystemAdapter
 
     public function fileSize(string $path): FileAttributes
     {
-        // TODO: Implement fileSize() method.
+        $connection = $this->getConnection();
+        $location = $this->prefixer()->prefixPath($path);
+
+        $result = $this->rawCommand($connection, 'SIZE ' . $location);
+        [$code, $message] = explode(' ', end($result), 2);
+
+        if ((int) $code !== 213) {
+            throw UnableToRetrieveMetadata::fileSize($location, $connection->getLastError());
+        }
+
+        return new FileAttributes($location, (int) $message);
+
     }
 
     private function normalizeListing(array $listing, string $prefix = ''): Generator
