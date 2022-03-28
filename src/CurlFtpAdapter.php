@@ -575,9 +575,14 @@ class CurlFtpAdapter implements FilesystemAdapter
         $sourceLocation = $this->prefixer()->prefixPath($source);
         $destinationLocation = $this->prefixer()->prefixPath($destination);
 
+        if ($this->isPureFtpdServer()) {
+            $sourceLocation = $this->escapePath($sourceLocation);
+            $destinationLocation = $this->escapePath($destinationLocation);
+        }
+
         $moveCommands = [
-            'RNFR '.$this->escapePath($sourceLocation),
-            'RNTO '.$this->escapePath($destinationLocation),
+            'RNFR '.$sourceLocation,
+            'RNTO '.$destinationLocation,
         ];
 
         $response = $this->rawPost($connection, $moveCommands);
@@ -618,7 +623,11 @@ class CurlFtpAdapter implements FilesystemAdapter
         $connection = $this->getConnection();
         $location = $this->prefixer()->prefixPath($path);
 
-        $response = $this->rawCommand($connection, 'DELE '.$this->escapePath($location));
+        if ($this->isPureFtpdServer()) {
+            $location = $this->escapePath($location);
+        }
+
+        $response = $this->rawCommand($connection, 'DELE '.$location);
         [$code] = explode(' ', end($response), 2);
 
         if ((int) $code !== 250) {
@@ -638,7 +647,11 @@ class CurlFtpAdapter implements FilesystemAdapter
         $connection = $this->getConnection();
         $location = $this->prefixer()->prefixPath($path);
 
-        $response = $this->rawCommand($connection, 'RMD '.$this->escapePath($location));
+        if ($this->isPureFtpdServer()) {
+            $location = $this->escapePath($location);
+        }
+
+        $response = $this->rawCommand($connection, 'RMD '.$location);
         [$code] = explode(' ', end($response), 2);
 
         if ((int) $code !== 250) {
@@ -659,7 +672,11 @@ class CurlFtpAdapter implements FilesystemAdapter
         $connection = $this->getConnection();
         $location = $this->prefixer()->prefixPath($path);
 
-        $response = $this->rawCommand($connection, 'MKD '.$this->escapePath($location));
+        if ($this->isPureFtpdServer()) {
+            $location = $this->escapePath($location);
+        }
+
+        $response = $this->rawCommand($connection, 'MKD '.$location);
         [$code] = explode(' ', end($response), 2);
         if ((int) $code !== 257) {
             throw UnableToCreateDirectory::atLocation($location, "Server responded with code {$code}");
@@ -678,7 +695,11 @@ class CurlFtpAdapter implements FilesystemAdapter
         $mode = $this->visibilityConverter->forFile($visibility);
         $location = $this->prefixer()->prefixPath($path);
 
-        $request = sprintf('SITE CHMOD %o %s', $mode, $this->escapePath($location));
+        if ($this->isPureFtpdServer()) {
+            $location = $this->escapePath($location);
+        }
+
+        $request = sprintf('SITE CHMOD %o %s', $mode, $location);
         $response = $this->rawCommand($connection, $request);
         [$code] = explode(' ', end($response), 2);
 
@@ -779,7 +800,12 @@ class CurlFtpAdapter implements FilesystemAdapter
     public function lastModified(string $path) : FileAttributes
     {
         $location = $this->prefixer()->prefixPath($path);
-        $response = $this->rawCommand($this->getConnection(), 'MDTM '.$this->escapePath($location));
+
+        if ($this->isPureFtpdServer()) {
+            $location = $this->escapePath($location);
+        }
+
+        $response = $this->rawCommand($this->getConnection(), 'MDTM '.$location);
         [$code, $time] = explode(' ', end($response), 2);
         if ($code !== '213' || $time < 0) {
             throw UnableToRetrieveMetadata::lastModified($path);
@@ -808,7 +834,14 @@ class CurlFtpAdapter implements FilesystemAdapter
         if ($deep === true) {
             yield from $this->listDirectoryContentsRecursive($path);
         } else {
-            $request = rtrim('LIST -aln '.$this->escapePath($path));
+            $location = $this->prefixer()->prefixPath($path);
+
+            if ($this->isPureFtpdServer()) {
+                $location = str_replace(' ', '\ ', $location);
+                $location = $this->escapePath($location);
+            }
+
+            $request = rtrim('LIST -aln '.$location);
 
             $connection = $this->getConnection();
             $result = $connection->exec([CURLOPT_CUSTOMREQUEST => $request]);
@@ -831,7 +864,11 @@ class CurlFtpAdapter implements FilesystemAdapter
      */
     protected function listDirectoryContentsRecursive(string $directory): Generator
     {
-        $request = rtrim('LIST -aln '.$this->escapePath($directory));
+        if ($this->isPureFtpdServer()) {
+            $directory = $this->escapePath($directory);
+        }
+
+        $request = rtrim('LIST -aln '.$directory);
 
         $connection = $this->getConnection();
         $listing = $connection->exec([CURLOPT_CUSTOMREQUEST => $request]);
@@ -888,17 +925,7 @@ class CurlFtpAdapter implements FilesystemAdapter
      */
     protected function escapePath(string $path): string
     {
-        if (empty($path)) {
-            return '';
-        }
-
-        if ($this->isPureFtpdServer()) {
-            return str_replace(['*', '[', ']'], ['\\*', '\\[', '\\]'], $path);
-        }
-
-        $path = str_replace('*', '\\*', $path);
-
-        return $path;
+        return str_replace(['*', '[', ']'], ['\\*', '\\[', '\\]'], $path);
     }
 
     /**
@@ -1025,7 +1052,12 @@ class CurlFtpAdapter implements FilesystemAdapter
     {
         $location = $this->prefixer()->prefixPath($path);
 
-        $object = $this->rawCommand($this->getConnection(), 'STAT '.$this->escapePath($location));
+        if ($this->isPureFtpdServer()) {
+            $location = str_replace(' ', '\ ', $location);
+            $location = $this->escapePath($location);
+        }
+
+        $object = $this->rawCommand($this->getConnection(), 'STAT '.$location);
 
         if (empty($object) || count($object) < 3 || substr($object[count($object) - 2], 0, 5) === "ftpd:") {
             throw UnableToRetrieveMetadata::create($path, $type, error_get_last()['message'] ?? '');
@@ -1049,7 +1081,11 @@ class CurlFtpAdapter implements FilesystemAdapter
         $connection = $this->getConnection();
         $location = $this->prefixer()->prefixPath($path);
 
-        $result = $this->rawCommand($connection, 'SIZE '.$this->escapePath($location));
+        if ($this->isPureFtpdServer()) {
+            $location = $this->escapePath($location);
+        }
+
+        $result = $this->rawCommand($connection, 'SIZE '.$location);
         [$code, $message] = explode(' ', end($result), 2);
 
         if ((int) $code !== 213) {
@@ -1202,13 +1238,18 @@ class CurlFtpAdapter implements FilesystemAdapter
             $dirPath .= '/'.$part;
             $location = $this->prefixer()->prefixPath($dirPath);
 
-            $response = $this->rawCommand($connection, 'CWD '.$this->escapePath($location));
+
+            if ($this->isPureFtpdServer()) {
+                $location = $this->escapePath($location);
+            }
+
+            $response = $this->rawCommand($connection, 'CWD '.$location);
             [$code, $message] = explode(' ', end($response), 2);
             if ((int) $code === 250) {
                 continue;
             }
 
-            $response = $this->rawCommand($connection, 'MKD '.$this->escapePath($location));
+            $response = $this->rawCommand($connection, 'MKD '.$location);
             [$code, $message] = explode(' ', end($response), 2);
 
             if ((int) $code === 250) {
@@ -1235,7 +1276,10 @@ class CurlFtpAdapter implements FilesystemAdapter
         $root = $this->getRoot();
 
         if ($root !== '') {
-            $response = $this->rawCommand($connection, 'CWD '.$this->escapePath($root));
+            if ($this->isPureFtpdServer()) {
+                $root = $this->escapePath($root);
+            }
+            $response = $this->rawCommand($connection, 'CWD '.$root);
             [$code, $message] = explode(' ', end($response), 2);
             if ((int) $code !== 250) {
                 throw new RuntimeException('Root is invalid or does not exist: '.$root);
