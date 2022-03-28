@@ -739,31 +739,6 @@ class CurlFtpAdapter implements FilesystemAdapter
     }
 
     /**
-     * Get all the meta data of a file or directory.
-     *
-     * @param string $path
-     *
-     * @return array|false
-     */
-    public function getMetadata(string $path)
-    {
-        if ($path === '') {
-            return ['type' => 'dir', 'path' => ''];
-        }
-
-        $request = rtrim('LIST -A '.$this->escapePath($path));
-
-        $connection = $this->getConnection();
-        $result = $connection->exec([CURLOPT_CUSTOMREQUEST => $request]);
-        if ($result === false) {
-            return false;
-        }
-        $listing = $this->normalizeListing(explode(PHP_EOL, $result), '');
-
-        return current($listing);
-    }
-
-    /**
      * Get the mimetype of a file.
      *
      * @param string $path

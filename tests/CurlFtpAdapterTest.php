@@ -126,11 +126,6 @@ class CurlFtpAdapterTest extends TestCase
         $this->assertEquals($contents, $response);
     }
 
-    public function testGetMetadata(): void
-    {
-        $this->assertSame(['type' => 'dir', 'path' => ''], $this->adapter->getMetadata(''));
-    }
-
     /**
      * @dataProvider filesProvider
      *
